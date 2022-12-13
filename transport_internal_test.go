@@ -18,7 +18,7 @@ import (
 
 	tls "github.com/Danny-Dasilva/utls"
 
-	"github.com/Danny-Dasilva/fhttp/internal"
+	"github.com/Chr0nicT/fhttp/internal"
 )
 
 // Issue 15446: incorrect wrapping of errors when server closes an idle connection.

@@ -47,8 +47,8 @@ import (
 
 	tls "github.com/Danny-Dasilva/utls"
 
-	http "github.com/Danny-Dasilva/fhttp"
-	"github.com/Danny-Dasilva/fhttp/http2/hpack"
+	http "github.com/Chr0nicT/fhttp"
+	"github.com/Chr0nicT/fhttp/http2/hpack"
 
 	"golang.org/x/net/http/httpguts"
 )

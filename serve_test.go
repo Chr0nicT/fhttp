@@ -37,11 +37,11 @@ import (
 
 	tls "github.com/Danny-Dasilva/utls"
 
-	. "github.com/Danny-Dasilva/fhttp"
-	"github.com/Danny-Dasilva/fhttp/httptest"
-	"github.com/Danny-Dasilva/fhttp/httputil"
-	"github.com/Danny-Dasilva/fhttp/internal"
-	"github.com/Danny-Dasilva/fhttp/internal/testenv"
+	. "github.com/Chr0nicT/fhttp"
+	"github.com/Chr0nicT/fhttp/httptest"
+	"github.com/Chr0nicT/fhttp/httputil"
+	"github.com/Chr0nicT/fhttp/internal"
+	"github.com/Chr0nicT/fhttp/internal/testenv"
 )
 
 type dummyAddr string
