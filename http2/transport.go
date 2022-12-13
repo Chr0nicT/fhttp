@@ -152,11 +152,6 @@ type Transport struct {
 	Navigator string
 }
 
-var (
-	Chrome  = "chrome"
-	Firefox = "firefox"
-)
-
 func (t *Transport) maxHeaderListSize() uint32 {
 	if t.MaxHeaderListSize == 0 {
 		return 10 << 20
@@ -715,11 +710,8 @@ func (t *Transport) newClientConn(c net.Conn, addr string, singleUse bool) (*Cli
 		t.vlogf("http2: Transport creating client conn %p to %v", cc, c.RemoteAddr())
 	}
 
-	t.AutoUpdate()
-	t.ApplyPreset()
-
 	cc.cond = sync.NewCond(&cc.mu)
-	cc.flow.add(int32(t.InitialWindowSize))
+	cc.flow.add(int32(initialWindowSize))
 
 	// TODO: adjust this writer size to account for frame size +
 	// MTU + crypto/tls record padding.
@@ -727,7 +719,12 @@ func (t *Transport) newClientConn(c net.Conn, addr string, singleUse bool) (*Cli
 	cc.br = bufio.NewReader(c)
 	cc.fr = NewFramer(cc.bw, cc.br)
 
-	cc.fr.ReadMetaHeaders = hpack.NewDecoder(t.HeaderTableSize, nil)
+	if t.HeaderTableSize != 0 {
+		cc.fr.ReadMetaHeaders = hpack.NewDecoder(t.HeaderTableSize, nil)
+	} else {
+		cc.fr.ReadMetaHeaders = hpack.NewDecoder(initialHeaderTableSize, nil)
+	}
+	
 	cc.fr.MaxHeaderListSize = t.maxHeaderListSize()
 
 	// TODO: SetMaxDynamicTableSize, SetMaxDynamicTableSizeLimit on
@@ -746,7 +743,7 @@ func (t *Transport) newClientConn(c net.Conn, addr string, singleUse bool) (*Cli
 	cc.bw.Write(clientPreface)
 
 	if t.Navigator != "" {
-		inflowValue, nextStreamId, err := cc.fr.AutoWriteFrames(t)
+		inflowValue, nextStreamId, err := cc.fr.AutoWriteSettings(t)
 		if err != nil {
 			return nil, err
 		}
@@ -804,57 +801,45 @@ func (t *Transport) newClientConn(c net.Conn, addr string, singleUse bool) (*Cli
 	return cc, nil
 }
 
-func (t *Transport) AutoUpdate() {
+func (fr *Framer) AutoWriteSettings(t *Transport) (inflowValue uint32, nextStreamId uint32, err error) {
+	var initialSettings []Setting
+	var initialWindowSize uint32
+	var windowUpdateSize uint32
+	
 	switch t.Navigator {
-	case Firefox:
-		t.HeaderTableSize = 65536
-
-	case Chrome:
-		t.HeaderTableSize = 65536
-		t.MaxHeaderListSize = 262144
-
-	default:
-		t.HeaderTableSize = initialHeaderTableSize
-		t.InitialWindowSize = initialWindowSize
-	}
-}
-
-func (t *Transport) ApplyPreset() {
-	switch t.Navigator {
-	case Firefox:
-		t.Settings = []Setting{
-			{ID: SettingHeaderTableSize, Val: 65536},
-			{ID: SettingInitialWindowSize, Val: 131072},
-			{ID: SettingMaxFrameSize, Val: 16384},
+	case "firefox":
+		initialWindowSize = 131072
+		windowUpdateSize = 12517377
+		if t.HeaderTableSize != 0 {
+			initialSettings = append(initialSettings, Setting{ID: SettingHeaderTableSize, Val: t.HeaderTableSize})
+		} else {
+			initialSettings = append(initialSettings, Setting{ID: SettingHeaderTableSize, Val: 4096}) //65536
 		}
-	case Chrome:
-		t.Settings = []Setting{
-			{ID: SettingHeaderTableSize, Val: 65536},
-			{ID: SettingMaxConcurrentStreams, Val: 1000},
-			{ID: SettingInitialWindowSize, Val: 6291456},
-			{ID: SettingMaxFrameSize, Val: 16384},
-			{ID: SettingMaxHeaderListSize, Val: 262144},
-		}
-	}
-}
-
-func (fr *Framer) AutoWriteFrames(t *Transport) (inflowValue uint32, nextStreamId uint32, err error) {
-	switch t.Navigator {
-	case Firefox:
-		fr.WriteSettings(t.Settings...)
-		fr.WriteWindowUpdate(0, 12517377)
+		initialSettings = append(initialSettings, Setting{ID: SettingInitialWindowSize, Val: initialWindowSize})
+		initialSettings = append(initialSettings, Setting{ID: SettingMaxFrameSize, Val: 16384})
+		fr.WriteSettings(initialSettings...)
+		fr.WriteWindowUpdate(0, windowUpdateSize)
 		fr.WritePriority(3, PriorityParam{Weight: 200})
 		fr.WritePriority(5, PriorityParam{Weight: 100})
 		fr.WritePriority(7, PriorityParam{Weight: 0})
 		fr.WritePriority(9, PriorityParam{Weight: 0, StreamDep: 7})
 		fr.WritePriority(11, PriorityParam{Weight: 0, StreamDep: 3})
 		fr.WritePriority(13, PriorityParam{Weight: 240})
-		return 131072 + 12517377, 15, nil
-
-	case Chrome:
-		fr.WriteSettings(t.Settings...)
-		fr.WriteWindowUpdate(0, 15663105)
-		return 6291456 + 15663105, 1, nil
+		return initialWindowSize + windowUpdateSize, 15, nil
+	case "chrome":
+		initialWindowSize = 6291456
+		windowUpdateSize = 15663105
+		if t.HeaderTableSize != 0 {
+			initialSettings = append(initialSettings, Setting{ID: SettingHeaderTableSize, Val: t.HeaderTableSize})
+		} else {
+			initialSettings = append(initialSettings, Setting{ID: SettingHeaderTableSize, Val: 65536})
+		}
+		initialSettings = append(initialSettings, Setting{ID: SettingMaxConcurrentStreams, Val: 1000})
+		initialSettings = append(initialSettings, Setting{ID: SettingInitialWindowSize, Val: initialWindowSize})
+		initialSettings = append(initialSettings, Setting{ID: SettingMaxHeaderListSize, Val: 262144})
+		fr.WriteSettings(initialSettings...)
+		fr.WriteWindowUpdate(0, windowUpdateSize)
+		return initialWindowSize + windowUpdateSize, 1, nil
 
 	default:
 		return 0, 0, errors.New(t.Navigator + " is not supported")
